@@ -78,3 +78,71 @@ On peut tester que le endpoint **/health** nous renvoie bien ce qu'il faut.
 ![api_test](./images_tp1/Capture%20d’écran%202025-12-05%20115909.png)
 
 La réponse JSON est bien celle attendue.
+
+
+Maintenant, nous allons afficher la liste des conteneurs en cours d'execution.
+
+![docker_conteneurs](<images_tp1/Capture d’écran 2025-12-05 120210.png>)
+
+Il n'y a que le conteneur simple-api en cours d'exécution. Avec comme nom **upbeat-galileo**, comme image utilisée **simple-api** et comme port mappé **0.0.0.0:8000->8000/tcp**.
+
+On stoppe maintenant le conteneur en récupérant son id **28e877056d1e**.
+
+![docker_kill](./images_tp1/Capture%20d’écran%202025-12-05%20120248.png)
+
+En effet, il n'apparait plus dans ```docker ps```. On peut, cependant voir qu'il est encore disponible dans ```docker ps -a```
+
+![docker_conteneurs_a](./images_tp1/Capture%20d’écran%202025-12-05%20134307.png)
+
+En réalité,  ```docker ps``` affiche les conteneurs en cours d'exécution et ```docker ps -a``` liste les conetneurs qu'ils soient actifs, arrêtés ou en erreur. Ces conteneurs existent toujours sur le disque dur.
+
+## Exercice 5: Démarrer un mini-système multi-conteneurs avec Docker Compose
+
+On va créer un fichier docker-compose.yml à la racine pour permettre de lancer plusieurs services en une commande.
+
+Puis nous le remplissons afin de définir un service db basé sur l'image officielle de postgres:16, un service api qui utilise notre Dockerfile, des variables d'environnements, les ports nécessaires. 
+
+Nous lançons tous les services en arrière plan.
+![docker_compose](./images_tp1/Capture%20d’écran%202025-12-05%20135247.png)
+
+Les deux services db et api sont bien en train de tournés.
+![docker_services](./images_tp1/Capture%20d’écran%202025-12-05%20135425.png)
+
+On peut vérifier que l'API est bien lancée:
+![docker_api](./images_tp1/Capture%20d’écran%202025-12-05%20135425.png)
+
+Puis on arrête les conteneurs avec:
+```bash
+docker compose down
+```
+
+![docker_down](./images_tp1/Capture%20d’écran%202025-12-05%20140101.png)
+
+Cette commande est différente de ```docker stop``` qui se contente d'arrêter l'exécution d'un conteneur spécifique tout en le gardant sur le disque. ```docker compose down```  arrête tous les services de l'application et supprime définitivement les conteneurs associés. Mais il ne détruit pas les volumes (données présentes dans la db par exemple) comme ```docker compose down -v```
+
+## Exercice 6: Interagir avec la base de données PostgreSQL dans un conteneur
+
+On va redémarrer le Docker compose.
+
+![docker_recompose](./images_tp1/Capture%20d’écran%202025-12-05%20140726.png)
+
+Puis on va ouvrir un shell psql à l'intérieur du conteneur PostgreSQL avec la commande
+```bash
+docker compose exec db psql -U demo -d demo
+```
+
+```exec``` permet de lancer une commande à l'intérieur du conteneur déjà en cours ```db```. ```-U demo``` est une option de la commande psql, où l'on spécifie l'utilisateur qui se connecte à la base PostgreSQL et ```-d demo``` est aussi une option qui spécifie le nom de la base de donnée à laquelle se connecter.
+
+Ensuite, on exécute les requêtes ci-dessous:
+![docker_psql](./images_tp1/Capture%20d’écran%202025-12-05%20141118.png)
+
+Donc la première requête cherche à afficher la version de PostgreSQL. Dans notre cas c'est celle spécifiée dans le docker-compose.yml -> 16.
+La deuxième requête confirme qu'on s'est connecté à la base demo.
+
+Depuis un autre service Docker soit l'api, on peut se connecter à la base avec les paramètres suivants:
+- hostname : **db**
+- port: **5432**
+- utilisateur: **demo**
+- mot de passe: **demo**
+- bdd: **demo**
+Ce sont les valeurs spécifiées dans le docker-compose.yml.
