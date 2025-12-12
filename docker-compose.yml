@@ -25,6 +25,15 @@ services:
     volumes:
       - ./services/prefect:/opt/prefect/flows
       - ./data:/data:ro     # Rendre les CSV accessibles au conteneur Prefect
+  feast:
+    build: ./services/feast_repo      # TODO: donnez le chemin de build
+    depends_on:
+      - postgres
+    environment:
+      FEAST_USAGE: "False"
+    volumes:
+      - ./services/feast_repo/repo:/repo # TODO: monter le dossier ./services/feast_repo/repo dans /repo
+    
 
 volumes:
   pgdata:
