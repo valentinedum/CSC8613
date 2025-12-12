@@ -24,7 +24,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./services/prefect:/opt/prefect/flows
-      - ./data:/data:ro     # Rendre les CSV accessibles au conteneur Prefect
+      - ./data:/data            # enlever :ro pour rendre le volume en écriture
+      - ./services/feast_repo/repo:/repo  
   feast:
     build: ./services/feast_repo      # TODO: donnez le chemin de build
     depends_on:
