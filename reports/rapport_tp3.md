@@ -257,4 +257,36 @@ Online features for user: 7590-VHVEG
 {'user_id': ['7590-VHVEG'], 'months_active': [1], 'monthly_fee': [29.850000381469727], 'paperless_billing': [True]}
 ```
 
+Si par contre on interroge un `user_id` qui n'existe pas ou dont les données n'ont pas été chargées dans le Online Store , Feast ne lève pas d'erreur. Il renvoie simplement des valeurs None pour chacune des features demandées pour cet utilisateur.
+Par exemple:
+```
+Online features for user: 0871
+{'user_id': ['0871'], 'monthly_fee': [None], 'months_active': [None], 'paperless_billing': [None]}
+```
+
+## Intégration de Feast dans l'API
+
+Pour intégrer Feast dans l'API, nous devons ajouter un service api connecter au Feature Store dans le `docker-compose.yml` et adapter le `Dockerfile` de l'API ainsi que le `requirements.txt`. On finit par reconstruire et redemarrer l'architecture.
+
+Nous rajoutons à notre `app.py` un endpoint `GET /features/{user_id}` qui apelle get_online_features avec un petit sous-ensemble de features.
+
+## Test de l'API
+
+Nous relançons le `docker compose up -d --build`
+
+![feast_api](./images_tp3/Capture%20d’écran%202025-12-12%20145533.png)
+
+Le endpoint `/health` fonctionne toujours tandis que le nouveaux endpoint `features/user_id` fonctionne aussi.
+On retrouve les mêmes résultats que tout à l'heure.
+
+```bash
+$ curl http://localhost:8000/health
+{"status":"ok"}
+
+$ curl http://localhost:8000/features/7590-VHVEG
+{"user_id":"7590-VHVEG","features":{"user_id":"7590-VHVEG","monthly_fee":29.850000381469727,"paperless_billing":true,"months_active":1}}
+```
+
 # Réflexion
+
+Le endpoint `/features/{user_id}`, basé sur Feast, nous aide à réduire le *training-serving skew* (écart entre l'apprentissage et la production) car il interroge les mêmes features (à travers les `FeatureViews`) qui ont servies à construire le dataset d'entraînement. Feast permet la définition unique des données pour l'Offline (historique) et l'Online (API) ce qui élimine les possibilités d'incohérences entre chaque métier tout le long de la chaine (data engineer -> data scientist -> ml engineer)
