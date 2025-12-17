@@ -142,3 +142,81 @@ La requête a bien fonctionné et la réponse est la suivante :
 ```
 Le modèle prédit un churn pour cet utilisateur.
 Par ailleurs, le modèle dans l'api point vers `models:/streamflow_churn/Production` plutôt qu'un fichier local. Cela permet de ne pas dépendre de la version et donc de ne pas avoir à modifier l'API en fonction. Le rollback ou la mise à jour de version devient donc instantané (car pas de dépendance à la version). En plus de tout cela, on évite les risques de **recopie de fichier ou de nom de fichiers compliqués**
+
+## Exercice 5 : Robustesse du serving : cas d’échec réalistes (sans monitoring)
+
+### Tests `user_id` existant et inexistant
+
+Nous exposons le cas d'un `user_id`existant
+![predict_something](./images_tp4/Capture%20d’écran%202025-12-17%20144811.png)
+
+```json
+{
+  "user_id": "7590-VHVEG",
+  "prediction": 1,
+  "features_used": {
+    "plan_stream_tv": false,
+    "monthly_fee": 29.850000381469727,
+    "months_active": 1,
+    "plan_stream_movies": false,
+    "net_service": "DSL",
+    "paperless_billing": true,
+    "watch_hours_30d": 24.48365020751953,
+    "skips_7d": 4,
+    "avg_session_mins_7d": 29.14104461669922,
+    "rebuffer_events_7d": 1,
+    "unique_devices_30d": 3,
+    "failed_payments_90d": 1,
+    "ticket_avg_resolution_hrs_90d": 16,
+    "support_tickets_90d": 0
+  }
+}
+```
+
+Nous faisons à présent le test avec un `user_id` non existant.
+Voici, ce que nous obtenons :
+
+![predict_nothing](./images_tp4/Capture%20d’écran%202025-12-17%20145916.png)
+
+```json
+{
+  "error": "Missing features for user_id=7590",
+  "missing_features": [
+    "plan_stream_tv",
+    "monthly_fee",
+    "months_active",
+    "plan_stream_movies",
+    "net_service",
+    "paperless_billing",
+    "watch_hours_30d",
+    "skips_7d",
+    "avg_session_mins_7d",
+    "rebuffer_events_7d",
+    "unique_devices_30d",
+    "failed_payments_90d",
+    "ticket_avg_resolution_hrs_90d",
+    "support_tickets_90d"
+  ]
+}
+```
+En effet, le modèle ne connait pas le user et donc ne peut rien prédire.
+
+### Robustesse du serving
+
+**Deux causes principales d'échec**: 
+1. **Entité absente** - Le `user_id` n'existe pas dans l'online store Feast → toutes les features sont NULL
+2. **Online store obsolète** - Les features ne sont pas à jour (stale) → valeurs manquantes
+
+L'API détecte ces deux cas via le check `X.isnull()` et retourne une erreur explicite avec `missing_features`. Sans cette vérification, le modèle ferait des prédictions silencieuses sur des données incomplètes, ce qui est dangereux en production.
+
+
+## Exercice 6 : Réflexion de synthèse (ingénierie MLOps)
+
+### Avantages MLflow
+MLFlow assure la **traçabilité complète** des entrainements : chaque run est enregistré avec un `run_id` unique, des **métriques** et **artefacts**, permettant d'identifier exactement quel modèle a produit quels résultats. Le `Model Registry` organise les versions et les stages (None/Staging/Production), facilitant ainsi les **rollbacks** : pour revenir à une version antérieure, il suffit de changer son stage en `Production` sans toucher au code.
+
+### Définition Stage Production
+Le stage `Production` définit quelle version du modèle l'API utiliser au démarrage via `models:/streamflow_churn/Production`. À chaque requête, l'API charge **automatiquement** la version marquée `Production` sans modification de code. Cela permet les **rollbacks instantanés** : changer de version consiste à relabelliser une autre version en `Production`, sans intervention sur l'API. Côté déploiement, cela **prévient les erreurs manuelles** (mauvais fichier, mauvaise version) et facilite la **CI/CD** en découplant le versionning du code applicatif.
+
+### Problème restant contre la reproducibilité
+Même avec le système complet (Feast + Prefect + PostgreSQL + MLflow + Docker), la reproductibilité peut casser si : les données PostgreSQL sont modifiées (pas de snapshot brut), les images Docker utilisent des tags flottants (python:3.10 peut changer silencieusement), ou l'online store Feast diverge de l'offline store (asynchrone).
