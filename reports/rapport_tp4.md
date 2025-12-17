@@ -54,6 +54,8 @@ docker compose exec -e TRAIN_AS_OF=2024-01-31 prefect python /opt/prefect/flows/
 Après quelques warnings nous obtenons dans le terminal :
 
 ```bash
+Model name: streamflow_churn, version 3
+Created version '3' of model 'streamflow_churn'.
 [OK] Trained baseline RF. AUC=0.6208 F1=0.0524 ACC=0.7535 (run_id=81d1fbefdbd4465c81f085bdf80f6d00)
 2025/12/17 11:19:32 INFO mlflow.tracking._tracking_service.client: 🏃 View run rf_baseline_2024-01-31 at: http://mlflow:5000/#/experiments/1/runs/81d1fbefdbd4465c81f085bdf80f6d00.
 2025/12/17 11:19:32 INFO mlflow.tracking._tracking_service.client: 🧪 View experiment at: http://mlflow:5000/#/experiments/1.
@@ -85,7 +87,58 @@ Ces deux paramètres sont très important en MLOps.
 
 ## Exercice 3 : Explorer l’interface MLFlow et promouvoir un modèle
 
-Nous cherchons sur l'interface MLflow, notre dernière expérience en passant par `streamflow`, ensuite le dernier run en date.
+### Promotion de la version la plus récente et fonctionnelle
+
+Nous cherchons sur l'interface MLflow notre dernière expérience en passant par `streamflow`, ensuite le dernier run en date.
+
+Nous localisons le modèle `streamflow_churn` et cliquons pour le promouvoir vers le stage `Production`. Son numéro de version est `Version 3` (En effet, j'ai relancé 2 fois le modèle car pas tout à fait correct)
+
+Nous pouvons vérifier que c'est le seul en `Production` en checkant le `Registry Model`
+
+![registry_model](./images_tp4/Capture%20d’écran%202025-12-17%20141319.png)
+
+### Importance de l'interface
+
+La promotion via l'interface est préférable par rapport à un déploiement manuel car elle permet la **traçabilité** avec chaques promotions + timestamp. Elle facilite le **rollback** puisqu'elle répertorie toutes les versions existantes et qu'il suffit permuter les stages de 2 des versions pour revenir en arrière. Il est aussi possible de promouvoir en `Staging` avant de promouvoir en `Production` pour avoir un espace tampon et prevenir les bugs en production. Aussi, j'imagine que l'interface présente l'avantage de faciliter l'intégration CI/CD.
 
 
+## Exercice 4 : Étendre l’API pour exposer /predict (serving minimal end-to-end)
 
+L'objectif, ici, est de passer d’un endpoint “features” à un vrai endpoint de prédiction en améliorant notre API pour qu'elle récupère le modèle en production.
+
+### Création du endpoint `predict`
+
+Nous modifions pour cela les `requirements.txt` de l'api et ajoutons `MLFLOW_TRACKING_URI`=http://mlflow:5000 dans .env.
+
+Nous ajoutons ensuite dans `api/app.py` un endpoint `POST /predict` et permettons le chargement de `FeatureStore` ainsi que du modèle Mlflow en `Production` et nous finissons en redémarrant l'API.
+
+### Test de l'API et des prédictions
+
+Nous testons l'API en passant par Swagger UI
+![predict](./images_tp4/Capture%20d’écran%202025-12-17%20144811.png)
+
+La requête a bien fonctionné et la réponse est la suivante :
+```json
+{
+  "user_id": "7590-VHVEG",
+  "prediction": 1,
+  "features_used": {
+    "plan_stream_tv": false,
+    "monthly_fee": 29.850000381469727,
+    "months_active": 1,
+    "plan_stream_movies": false,
+    "net_service": "DSL",
+    "paperless_billing": true,
+    "watch_hours_30d": 24.48365020751953,
+    "skips_7d": 4,
+    "avg_session_mins_7d": 29.14104461669922,
+    "rebuffer_events_7d": 1,
+    "unique_devices_30d": 3,
+    "failed_payments_90d": 1,
+    "ticket_avg_resolution_hrs_90d": 16,
+    "support_tickets_90d": 0
+  }
+}
+```
+Le modèle prédit un churn pour cet utilisateur.
+Par ailleurs, le modèle dans l'api point vers `models:/streamflow_churn/Production` plutôt qu'un fichier local. Cela permet de ne pas dépendre de la version et donc de ne pas avoir à modifier l'API en fonction. Le rollback ou la mise à jour de version devient donc instantané (car pas de dépendance à la version). En plus de tout cela, on évite les risques de **recopie de fichier ou de nom de fichiers compliqués**
