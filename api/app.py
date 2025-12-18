@@ -1,9 +1,12 @@
 from fastapi import FastAPI
+from fastapi.responses import Response
 from pydantic import BaseModel
 from feast import FeatureStore
 import mlflow.pyfunc
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 import pandas as pd
 import os
+import time
 
 app = FastAPI(title="StreamFlow Churn Prediction API")
 
@@ -11,6 +14,12 @@ app = FastAPI(title="StreamFlow Churn Prediction API")
 REPO_PATH = "/repo"
 # TODO 1: complétez avec le nom de votre modèle
 MODEL_URI = "models:/streamflow_churn/Production"
+
+# TODO: Créez les métriques avec les noms suivants:
+# un Counter: "api_requests_total"
+# un Histogram: "api_request_latency_seconds"
+REQUEST_COUNT = Counter("api_requests_total", "Total number of API requests")
+REQUEST_LATENCY = Histogram("api_request_latency_seconds", "Latency of API requests in seconds")
 
 try:
     store = FeatureStore(repo_path=REPO_PATH)
@@ -33,6 +42,13 @@ def health():
 # TODO 2: Mettre une requête POST
 @app.post("/predict")
 def predict(payload: UserPayload):
+
+    # TODO: prendre le temps au départ avec time
+    start_time = time.time()
+
+    # TODO: incrementiez le request counter
+    REQUEST_COUNT.inc()
+
     if store is None or model is None:
         return {"error": "Model or feature store not initialized"}
 
@@ -79,9 +95,17 @@ def predict(payload: UserPayload):
     # (on ne suppose pas predict_proba ici)
     y_pred = model.predict(X)[0]
 
+    # TODO: observe latency in seconds (end - start)
+    REQUEST_LATENCY.observe(time.time() - start_time)
+
     # TODO 5 : Retourner la prédiction
     return {
         "user_id": payload.user_id,
         "prediction": int(y_pred),
         "features_used": X.to_dict(orient="records")[0],
     }
+
+@app.get("/metrics")
+def metrics():
+    # TODO: returnez une Response avec generate_latest() et CONTENT_TYPE_LATEST comme type de media
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
