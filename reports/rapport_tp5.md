@@ -134,3 +134,56 @@ rate(api_request_latency_seconds_sum[5m]) / rate(api_request_latency_seconds_cou
 Cette valeur représente le temps de réponse moyen (latence moyenne) par requête, calculé sur la fenêtre glissante de 5 minutes.
 
 
+## Exercice 4 : Setup de Grafana Setup et création d'un dashboard minimal
+
+A présent nous allons utiliser Grafana pour visualiser les métrics. 
+
+1. Nous ajoutons la datasource Prometheus dans Grafana.
+2. Nous créons un dashboard présentant le RPS sur les 5 dernières minutes.
+3. Nous créons un autre Dashboard avec comme requête `rate(api_request_latency_seconds_sum[5m]) / rate(api_request_latency_seconds_count[5m])` sur une fenêtre d'une heure.
+
+Pour éditer les requetes, voici l'interface:
+![pannel_conf](./images_tp5/Capture%20d’écran%202025-12-18%20113338.png)
+
+Voici Notre Dashboard final:
+![dashboard](./images_tp5/Capture%20d’écran%202025-12-18%20113242.png)
+
+4. Nous générons beaucoup de traffic en appelant:
+
+```bash
+for i in {1..100}; do
+  curl -s -X POST http://localhost:8000/predict \
+    -H "Content-Type: application/json" \
+    -d '{"user_id":"U0001"}' > /dev/null
+done
+```
+
+Après cette requête, on refresh Grafana et on constate en effet que le nombre de requetes augmente d'un coup jusqu'à atteindre 106 requetes.
+
+Les métriques techniques (RPS, Latence) permettent de surveiller la santé opértaionnelle de l'API en détectant les pics de charges, lenteurs etc. Mais, elles ne voient pas la performance du modèle lui même. Si l'API peut répondre très vite, elle peut fournir des prédictions erronnées (en particulier le drift, baisse de précision etc)
+
+## Exercice 5 : Drift Detection with Evidently (Month_000 vs Month_001)
+
+Nous créons un fichier `services/prefect/monitor_flow.py` qui charge le dataset "final", exécute un rapport Evidently et produit un signal scalre. Il calcule le target drift simple si churn_label est présent. 
+
+```bash
+docker compose exec -e REPORT_DIR=/reports/evidently prefect \
+  python /opt/prefect/flows/monitor_flow.py
+``` 
+ne fonctionne pas car l'url de l'api n'est pas la bonne :
+```bash
+docker compose exec -e PREFECT_API_URL="http://127.0.0.1:4200/api" prefect python /opt/prefect/flows/monitor_flow.py
+```
+
+Avec ceci, on réussit à générer le rapport evidently:
+```bash
+[Evidently] report_html=/reports/evidently/drift_2024-01-31_vs_2024-02-29.html report_json=/reports/evidently/drift_2024-01-31_vs_2024-02-29.json drift_share=0.06 -> NO_ACTION drift_share=0.06 < 0.30 (target_drift=0.0)
+```
+Le script n'a donc pas detecté de drift et on peut retrouver tous les détails dans le html créé dans le répertoire `reports/evidently`.
+
+On ouvre l'html dans un navigateur et voici une partie importante qui montre une comparaison des 2 snapshots :
+![drift](./images_tp5/Capture%20d’écran%202025-12-18%20150212.png)
+
+Il est possible de distinguer 2 types de drift le `Covariate Drift` et lee `Target Drift`. Le premier est celui lié au changement de la distribution des données d'entrée comme ci-dessus. Le deuxieme est lié à un changement de distribution de la variable à prédire `churn_label` comme ci-dessous.
+
+![drift_target](./images_tp5/Capture%20d’écran%202025-12-18%20150519.png)
