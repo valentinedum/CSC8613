@@ -114,3 +114,72 @@ curl -s -X POST "http://localhost:8000/predict" \
 ```
 
 L'API prédit un **churn (prediction=1)** pour cet utilisateur en utilisant les features récupérées depuis Feast.
+
+## Exercice 6 : CI GitHub Actions (smoke + unit) avec Docker Compose
+
+Nous avons créé un workflow CI dans `.github/workflows/ci.yml` avec deux jobs :
+
+**Job `unit` :**
+- Configure Python 3.11
+- Installe pytest
+- Exécute les tests unitaires
+
+**Job `integration` :**
+- Démarre la stack Docker Compose (postgres, feast, mlflow, api)
+- Vérifie le healthcheck de l'API
+- Upload les logs en cas d'échec
+
+**Pourquoi démarrer Docker Compose dans la CI ?**
+
+On démarre donc Docker Compose dans la CI pour effectuer des tests d'intégration multi-services. Cela permet de vérifier que tous les services (API, PostgreSQL, Feast, MLflow) communiquent correctement entre eux, et que l'API est fonctionnelle dans un environnement proche de la production.
+
+**Résultat du workflow GitHub Actions :**
+
+![github_actions_ci](./images_tp6/Capture%20d’écran%202026-01-07%20114034.png)
+
+Les deux jobs passent avec succès, validant ainsi les tests unitaires et l'intégration de la stack complète.
+
+## Exercice 7 : Synthèse finale : boucle complète drift → retrain → promotion → serving
+
+Ce TP a mis en place une boucle complète de MLOps automatisée qui assure la qualité et la fraîcheur du modèle en production.
+
+**1. Détection du drift (Evidently)**
+
+Le drift est mesuré en comparant les distributions statistiques des features entre deux périodes (référence vs. actuelle). Evidently calcule un `drift_share` qui représente la proportion de features ayant dérivé significativement. 
+
+Le seuil de 0.02 (2%) utilisé dans ce TP est volontairement bas pour forcer le réentrainement dans le cadre du TP. En pratique, ce seuil serait plus élevé (5-10%) pour éviter les réentrainements trop fréquents dus au bruit statistique et limiter les coûts.
+
+**2. Réentrainement automatique (train_and_compare_flow)**
+
+Lorsque `drift_share >= threshold` pour nous à 2%, le flow Prefect `train_and_compare_flow` se déclenche automatiquement et il:
+- Construit un dataset d'entraînement avec Feast pour la nouvelle période
+- Entraîne un modèle candidat (RandomForest) et logue les métriques dans MLflow
+- Évalue le **modèle Production actuel** sur les mêmes données (même split)
+- Compare les AUC : `new_auc > prod_auc + delta` (delta=0.01) avec ce petit delta pour éviter la maj à cause du bruit.
+
+La fonction pure `should_promote()` garantit une logique de décision testable et déterministe. Si le candidat est significativement meilleur, il est automatiquement promu en Production via le Model Registry MLflow, et l'ancienne version est archivée.
+
+**3. Déploiement (API restart)**
+
+L'API charge le modèle depuis `models:/streamflow_churn/Production` au démarrage. Après une promotion, un redémarrage (`docker compose restart api`) est nécessaire pour charger la nouvelle version. L'API sert ensuite les prédictions avec les features fraîches récupérées de Feast.
+
+### Rôle de Prefect vs GitHub Actions
+
+Prefect gère les workflows de production comme le monitoring et le réentrainement. Il permet de lancer des tâches de manière automatique, par exemple tous les mois pour vérifier le drift. Il offre aussi une interface pour voir ce qui se passe et relancer en cas d'erreur.
+
+GitHub Actions vérifie que le code fonctionne bien à chaque fois qu'on fait un commit (continuous integration). Il lance les tests unitaires et vérifie que tous les services démarrent correctement avec Docker Compose avec les tests d'intégration. Par contre, il ne fait pas d'entraînement complet car c'est trop long pour la CI.
+
+### Limites et améliorations
+
+**Pourquoi la CI ne doit pas entraîner le modèle**
+
+Entraîner un modèle prend du temps et ralentirait trop la CI. Les résultats changent un peu à chaque fois à cause du hasard dans l'algorithme. La CI sert juste à vérifier que le code est bon, pas à évaluer le modèle.
+
+**Tests manquants**
+
+Il manque des tests pour vérifier que Feast récupère bien les bonnes features. Il faudrait aussi tester que l'API répond correctement avec le bon format JSON. On devrait avoir des alertes si les performances du modèle baissent trop. Aussi, des tests de charge permettraient de voir si l'API tient sous beaucoup de requêtes. 
+
+**Approbation humaine**
+
+En réalité, on ne peut pas tout automatiser. Il faudrait qu'une personne valide avant de mettre un nouveau modèle en production. On devrait aussi surveiller les performances après le déploiement avec par exemple un test A/B ou d'autres type. Il faut garder une trace de qui a mis quel modèle en production et pouvoir faire un rollback si ça se passe mal. Dans des domaines sensibles comme la banque ou la santé, l'approbation humaine est nécessaire.
+
