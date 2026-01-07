@@ -80,3 +80,37 @@ Le rapport HTML généré montre l'analyse du drift entre les deux périodes :
 
 ![evidently](./images_tp6/Capture%20d’écran%202026-01-07%20112254.png)
 
+## Exercice 5 : Redémarrage API pour charger le nouveau modèle Production + test /predict
+
+**Pourquoi redémarrer l'API ?**
+Notre API charge le modèle au démarrage (MLflow URI models:/streamflow_churn/Production). Donc si une promotion a eu lieu, il faut redémarrer l’API pour qu’elle recharge la nouvelle version depuis le Model Registry. 
+
+
+**Test de prédiction :**
+
+```bash
+curl -s -X POST "http://localhost:8000/predict" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"7590-VHVEG"}'
+```
+
+**Réponse JSON :**
+
+```json
+{
+  "user_id": "7590-VHVEG",
+  "prediction": 1,
+  "features_used": {
+    "months_active": 1,
+    "paperless_billing": true,
+    "net_service": false,
+    "monthly_fee": 29.85,
+    "avg_session_mins_7d": 29.14,
+    "skips_7d": 4,
+    "unique_devices_30d": 2,
+    ...
+  }
+}
+```
+
+L'API prédit un **churn (prediction=1)** pour cet utilisateur en utilisant les features récupérées depuis Feast.
