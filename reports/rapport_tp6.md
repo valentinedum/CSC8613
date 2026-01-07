@@ -37,5 +37,17 @@ Nous allons, ici, créer un flow autonome qui :
 
 Pour cela, nous créons un fichier `services/prefect/train_and_compare_flow.py` et l'éxecutons dans un conteneur prefect.
 
-Nous allons vérifier dans Mlflow si une nouvelle version a été promue.
+```bash
+[COMPARE] candidate_auc=0.6397 vs prod_auc=0.8335 (delta=0.0100)
+[DECISION] skipped
+[SUMMARY] as_of=2024-02-29 cand_v=4 cand_auc=0.6397 prod_v=3 prod_auc=0.8335 -> skipped
+```
 
+Nous allons vérifier dans Mlflow si une nouvelle version a été promue. Normalement cette version 4 est moins bonne que la version 3. Elle devrait être skipped et donc être au statut None.
+
+![mlflow_compare](./images_tp6/Capture%20d’écran%202026-01-07%20104424.png)
+
+C'est le cas, tout est bon.
+**Pourquoi utiliser un delta ?**
+
+On utilise un delta (0.01) pour éviter de promouvoir un modèle pour des gains négligeables dus au bruit statistique, et pour s'assurer que l'amélioration est suffisamment significative pour justifier le changement en production.
