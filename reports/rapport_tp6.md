@@ -48,6 +48,35 @@ Nous allons vérifier dans Mlflow si une nouvelle version a été promue. Normal
 ![mlflow_compare](./images_tp6/Capture%20d’écran%202026-01-07%20104424.png)
 
 C'est le cas, tout est bon.
+
 **Pourquoi utiliser un delta ?**
 
 On utilise un delta (0.01) pour éviter de promouvoir un modèle pour des gains négligeables dus au bruit statistique, et pour s'assurer que l'amélioration est suffisamment significative pour justifier le changement en production.
+
+## Exercice 4 : Connecter drift → retraining automatique (monitor_flow.py)
+
+Nous allons à présent faire en sorte que le nouvel entrainement se déclenche automatiquement lorsqu'il y a la detection de drift. Pour cela, nous adaptons dans le fichier `services/prefect/monitor_flow.py` la fonction `decide_action` pour appeler `train_and_compare_flow` avec un seuil de 0.02.
+
+Puis, nous testons en exécutant le script dans prefect :
+
+```bash
+docker compose exec prefect python monitor_flow.py
+```
+
+**Logs du monitoring et réentrainement :**
+
+```bash
+[COMPARE] candidate_auc=0.6397 vs prod_auc=0.8335 (delta=0.0100)
+[DECISION] skipped
+[SUMMARY] as_of=2024-02-29 cand_v=6 cand_auc=0.6397 prod_v=3 prod_auc=0.8335 -> skipped
+[Evidently] report_html=/reports/evidently/drift_2024-01-31_vs_2024-02-29.html 
+            report_json=/reports/evidently/drift_2024-01-31_vs_2024-02-29.json 
+            drift_share=0.06 -> RETRAINING_TRIGGERED drift_share=0.06 >= 0.02 -> skipped
+```
+
+Le drift détecté est de 6% (drift_share=0.06), ce qui dépasse le seuil de 2%. Le réentrainement a été déclenché automatiquement et un nouveau modèle candidat (v6) a été créé. Cependant, ce modèle n'a pas été promu car son AUC (0.6397) est inférieur à celui du modèle en production (0.8335).
+
+Le rapport HTML généré montre l'analyse du drift entre les deux périodes :
+
+![evidently](./images_tp6/Capture%20d’écran%202026-01-07%20112254.png)
+
